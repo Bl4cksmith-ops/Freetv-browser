@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1, maximum-scale=1"/>
-  <title>Free TV v12.2 (Stable Touch + Low-Power Autoscroll)</title>
+  <title>Free TV v12.3 (Mobile Guide Fix)</title>
   <style>
     :root{
       --bg:#0b0f17;
@@ -28,29 +28,38 @@
       touch-action: manipulation;
     }
 
-    .app{height:100vh;width:100vw;display:grid;grid-template-columns: 400px 1fr;}
-    .guide{min-height:0;min-width:0}
-    .list{min-height:0;min-width:0;overflow-y:auto;overscroll-behavior:contain}
-    .player{position:relative;overflow:hidden;background:#000}
+    .app{
+      height:100vh;width:100vw;
+      display:grid;
+      grid-template-columns:minmax(320px,420px) 1fr;
+    }
 
+    /* Theater hides guide */
     .theater .app{ grid-template-columns: 0 1fr; }
     .theater .guide{ display:none; }
 
+    /* Guide: make the whole panel scrollable on small screens */
     .guide{
       background:var(--panel);
       border-right:1px solid var(--panelBorder);
       padding:12px;
-      display:grid;
-      grid-template-rows:auto auto auto auto 1fr auto;
-      gap:10px;
+
+      display:flex;
+      flex-direction:column;
+      min-height:0;
+
+      overflow-y:auto;
+      overscroll-behavior:contain;
+      -webkit-overflow-scrolling:touch;
+
       opacity:1;
       transform:translateX(0);
       transition:opacity 1.2s ease, transform 1.2s ease;
       will-change:opacity,transform;
     }
-    .idle .guide{opacity:.06;transform:translateX(-10px)}
+    .idle .guide{opacity:.08;transform:translateX(-10px)}
 
-    .hdr{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
     .title{font-weight:820;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
     .pill{
       font-size:12px;padding:4px 10px;border-radius:999px;
@@ -59,15 +68,487 @@
       color:rgba(255,255,255,.85);
       white-space:nowrap;
     }
-    .sub{color:var(--muted);font-size:12px;line-height:1.35}
+    .sub{color:var(--muted);font-size:12px;line-height:1.35;margin-bottom:10px}
 
-    .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .controls{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+      margin-bottom:10px;
+    }
     input,select,button,textarea,label{font:inherit}
     input,select{
       width:100%;padding:10px;border-radius:12px;
       border:1px solid rgba(255,255,255,.12);
       background:rgba(255,255,255,.06);
       color:var(--text);
+      outline:none;
+    }
+
+    button{
+      padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+      background:rgba(124,92,255,.15);color:rgba(255,255,255,.92);
+      cursor:pointer;box-shadow:var(--shadow);
+    }
+    button.secondary{background:rgba(255,255,255,.06);box-shadow:none}
+    button.danger{background:rgba(251,113,133,.15)}
+    button:active{transform:translateY(1px)}
+
+    /* ✅ Toggle grid: consistent height/width so nothing becomes “huge” */
+    .toggles{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:10px;
+      height:44px;                 /* ✅ fixed height */
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
+      color:rgba(255,255,255,.88);
+      user-select:none;
+    }
+    .toggle input{width:auto; transform:scale(1.05);}
+
+    /* List occupies remaining height inside guide */
+    .list{
+      flex:1;
+      min-height:160px;
+      border-radius:var(--radius);
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.03);
+      overflow-y:auto;
+      overscroll-behavior:contain;
+      -webkit-overflow-scrolling:touch;
+    }
+    .item{
+      padding:12px;border-bottom:1px solid rgba(255,255,255,.08);
+      display:grid;gap:6px;cursor:pointer;
+    }
+    .item:last-child{border-bottom:none}
+    .item.selected{outline:2px solid rgba(124,92,255,.55);background:rgba(124,92,255,.10)}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .name{font-weight:760}
+    .meta{color:var(--muted);font-size:12px}
+    .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .tag{
+      font-size:11px;padding:4px 8px;border-radius:999px;
+      border:1px solid rgba(124,92,255,.28);background:rgba(124,92,255,.14);
+      color:rgba(230,225,255,.92);
+      max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+    }
+    .tag.good{border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.13)}
+    .tag.warn{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.12)}
+
+    .footer{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      color:var(--muted);font-size:12px;
+      padding-top:10px;
+    }
+
+    .player{position:relative;overflow:hidden;background:#000}
+    iframe,video{width:100%;height:100%;border:0;background:#000}
+
+    .overlayTop{
+      position:absolute;top:12px;left:12px;right:12px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      pointer-events:none;z-index:9;
+    }
+    .chip{
+      background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.12);
+      padding:8px 10px;border-radius:999px;color:rgba(255,255,255,.90);
+      font-size:12px;max-width:60%;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+
+    .touchBar{
+      position:absolute;left:12px;right:12px;bottom:12px;
+      display:flex;gap:8px;flex-wrap:wrap;
+      justify-content:center;align-items:center;
+      z-index:10;
+    }
+    .touchBtn{
+      pointer-events:auto;
+      border-radius:999px;padding:10px 14px;
+      background:rgba(0,0,0,.42);
+      border:1px solid rgba(255,255,255,.14);
+      color:rgba(255,255,255,.92);
+      box-shadow: var(--shadow);
+      user-select:none;font-size:13px;
+    }
+    .touchBtn.good{ border-color: rgba(45,212,191,.5); background: rgba(45,212,191,.16); }
+    .touchBtn.warn{ border-color: rgba(251,113,133,.55); background: rgba(251,113,133,.18); }
+    .touchBtn.on{ border-color: rgba(124,92,255,.6); background: rgba(124,92,255,.22); }
+
+    .callout{
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.05);
+      padding:12px;
+      display:grid;
+      gap:8px;
+      margin-bottom:10px;
+    }
+    .callout b{color:rgba(255,255,255,.95)}
+    .callout small{color:var(--muted);line-height:1.35}
+
+    /* Mobile: stack guide on top of player */
+    @media (max-width: 900px){
+      body{overflow:auto}
+      .app{grid-template-columns:1fr; grid-template-rows:auto minmax(360px, 1fr);}
+      .guide{border-right:none;border-bottom:1px solid var(--panelBorder); height:auto; max-height:56vh;}
+      .player{min-height:44vh;}
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="guide" id="guide">
+    <div class="hdr">
+      <div class="title">Free TV <span class="pill">v12.3</span></div>
+      <div class="pill" id="clock">--:--</div>
+    </div>
+
+    <div class="sub">
+      Tip: Tap <b>Import English Playlist</b> to load channels. Autoscroll only moves when there are enough items to scroll.
+    </div>
+
+    <div class="callout" id="emptyCallout" style="display:none">
+      <b>No channels loaded</b>
+      <small>
+        Tap Import. If it fails, try again or use your own M3U later.
+      </small>
+      <div class="controls" style="grid-template-columns:1fr 1fr">
+        <button id="btnImportEng">Import English Playlist</button>
+        <button class="secondary" id="btnResetAll">Reset</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <input id="q" placeholder="Search (name/tags/url)" />
+      <select id="group"><option value="">Group (all)</option></select>
+      <select id="lang"><option value="">Language (all)</option></select>
+      <select id="type">
+        <option value="">Type (all)</option>
+        <option value="news">News</option>
+        <option value="sports">Sports</option>
+        <option value="movies">Movies</option>
+        <option value="music">Music</option>
+        <option value="education">Education</option>
+        <option value="general">General</option>
+      </select>
+    </div>
+
+    <!-- ✅ All toggles same size -->
+    <div class="toggles">
+      <label class="toggle"><input type="checkbox" id="playableOnly"/> Playable only</label>
+      <label class="toggle"><input type="checkbox" id="hideAudioOnly"/> Hide audio-only</label>
+      <label class="toggle"><input type="checkbox" id="showFavs"/> Favorites</label>
+      <label class="toggle"><input type="checkbox" id="showSleep"/> Sleep channels</label>
+      <label class="toggle"><input type="checkbox" id="autoScroll"/> Guide autoscroll</label>
+      <label class="toggle"><input type="checkbox" id="autoTheater"/> Auto theater on idle</label>
+    </div>
+
+    <div class="controls">
+      <button class="secondary" id="btnImportEng2">Import English Playlist</button>
+      <button class="secondary" id="btnResetUI">Reset UI</button>
+    </div>
+
+    <div class="list" id="list"></div>
+
+    <div class="footer">
+      <div id="status">Ready</div>
+      <div id="count">0</div>
+    </div>
+  </aside>
+
+  <main class="player" id="player">
+    <iframe id="pvFrame"
+      sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-presentation"
+      allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+      referrerpolicy="strict-origin-when-cross-origin"
+      style="display:none"></iframe>
+
+    <video id="pvVideo" controls playsinline style="display:block"></video>
+
+    <div class="overlayTop">
+      <div class="chip" id="nowPlaying">No channel</div>
+      <div class="chip" id="modeBadge">mode: —</div>
+    </div>
+
+    <div class="touchBar">
+      <div class="touchBtn" id="tPrev">⟵ Prev</div>
+      <div class="touchBtn good" id="tPlay">▶ Play</div>
+      <div class="touchBtn" id="tNext">Next ⟶</div>
+      <div class="touchBtn" id="tTheater">⬛ Theater</div>
+      <div class="touchBtn" id="tFS">⛶ Fullscreen</div>
+      <div class="touchBtn warn" id="tRecover">🧯 Recover</div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+<script>
+(() => {
+  const DEFAULT_ENG_PLAYLIST = "https://iptv-org.github.io/iptv/languages/eng.m3u";
+  const KEY = "free_tv_v12_3_state";
+
+  const IDLE_MS = 30000;
+
+  // Autoscroll
+  const AUTOSCROLL_TICK_MS = 120;
+  const AUTOSCROLL_STEP_PX = 0.7;
+  const AUTOSCROLL_RESUME_MS = 2500;
+
+  const EMBEDDED_STARTER = [
+    {name:"Big Buck Bunny (MP4)", url:"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", mode:"mp4", language:"English", group:"Demo", type:"general", tags:["mp4","demo"]},
+    {name:"Sintel (MP4)", url:"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4", mode:"mp4", language:"English", group:"Demo", type:"general", tags:["mp4","demo"]},
+    {name:"HLS Test (bipbop)", url:"https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8", mode:"hls", language:"English", group:"Test", type:"general", tags:["hls","test"]},
+    {name:"HLS Test (mux)", url:"https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", mode:"hls", language:"English", group:"Test", type:"general", tags:["hls","test"]},
+    {name:"Pluto TV (opens tab)", url:"https://pluto.tv/live-tv", mode:"tab", language:"English", group:"FAST", type:"general", tags:["fast","tab"]},
+    {name:"Tubi Live (opens tab)", url:"https://tubitv.com/live", mode:"tab", language:"English", group:"FAST", type:"general", tags:["fast","tab"]},
+    {name:"Roku Channel (opens tab)", url:"https://therokuchannel.roku.com", mode:"tab", language:"English", group:"FAST", type:"general", tags:["fast","tab"]}
+  ];
+
+  const DEFAULT_STATE = {
+    channels: EMBEDDED_STARTER.map((c,i)=>({id:"seed_"+i, ...c})),
+    favorites: {},
+    sleepTags: {},
+    audioOnly: {},
+    ui: {
+      playableOnly: true,
+      hideAudioOnly: true,
+      showFavs: false,
+      showSleep: false,
+      autoScroll: false,
+      autoTheater: false,
+      theater: false
+    }
+  };
+
+  let state = loadState();
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return structuredClone(DEFAULT_STATE);
+      const s = JSON.parse(raw);
+      if(!Array.isArray(s.channels) || s.channels.length===0) s.channels = structuredClone(DEFAULT_STATE.channels);
+      s.favorites ||= {};
+      s.sleepTags ||= {};
+      s.audioOnly ||= {};
+      s.ui ||= structuredClone(DEFAULT_STATE.ui);
+      return s;
+    }catch{
+      return structuredClone(DEFAULT_STATE);
+    }
+  }
+  function saveState(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+
+  const body = document.body;
+  const guide = document.getElementById("guide");
+  const list = document.getElementById("list");
+  const player = document.getElementById("player");
+
+  const statusEl = document.getElementById("status");
+  const countEl = document.getElementById("count");
+  const nowEl = document.getElementById("nowPlaying");
+  const modeBadge = document.getElementById("modeBadge");
+  const clockEl = document.getElementById("clock");
+
+  const emptyCallout = document.getElementById("emptyCallout");
+  const btnImportEng = document.getElementById("btnImportEng");
+  const btnImportEng2 = document.getElementById("btnImportEng2");
+  const btnResetAll = document.getElementById("btnResetAll");
+  const btnResetUI = document.getElementById("btnResetUI");
+
+  const qEl = document.getElementById("q");
+  const groupEl = document.getElementById("group");
+  const langEl = document.getElementById("lang");
+  const typeEl = document.getElementById("type");
+
+  const playableOnlyEl = document.getElementById("playableOnly");
+  const hideAudioOnlyEl = document.getElementById("hideAudioOnly");
+  const showFavsEl = document.getElementById("showFavs");
+  const showSleepEl = document.getElementById("showSleep");
+  const autoScrollEl = document.getElementById("autoScroll");
+  const autoTheaterEl = document.getElementById("autoTheater");
+
+  const pvFrame = document.getElementById("pvFrame");
+  const pvVideo = document.getElementById("pvVideo");
+
+  const tPrev = document.getElementById("tPrev");
+  const tPlay = document.getElementById("tPlay");
+  const tNext = document.getElementById("tNext");
+  const tTheater = document.getElementById("tTheater");
+  const tFS = document.getElementById("tFS");
+  const tRecover = document.getElementById("tRecover");
+
+  function setStatus(msg){ statusEl.textContent = msg; }
+  function escapeHtml(s){
+    return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+  function uniq(arr){ return [...new Set(arr)].filter(Boolean).sort((a,b)=>a.localeCompare(b)); }
+  function hash(s){
+    let h = 2166136261;
+    for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h>>>0).toString(16);
+  }
+  function normalizeMode(url){
+    const u = (url||"").toLowerCase();
+    if(u.includes(".m3u8")) return "hls";
+    if(u.includes(".mp4")) return "mp4";
+    return "tab";
+  }
+  function guessType(group, name){
+    const g = (group||"").toLowerCase();
+    const n = (name||"").toLowerCase();
+    if(g.includes("news") || n.includes("news")) return "news";
+    if(g.includes("sport") || n.includes("sport")) return "sports";
+    if(g.includes("movie") || n.includes("movie") || g.includes("cinema")) return "movies";
+    if(g.includes("music") || n.includes("music") || g.includes("radio")) return "music";
+    if(g.includes("education") || g.includes("science") || n.includes("nasa")) return "education";
+    return "general";
+  }
+
+  function setTheater(on){
+    state.ui.theater = !!on;
+    body.classList.toggle("theater", !!on);
+    tTheater.classList.toggle("on", !!on);
+    saveState();
+  }
+
+  async function toggleFullscreen(){
+    try{
+      const el = player;
+      if(document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen({ navigationUI: "hide" });
+    }catch{
+      setStatus("Fullscreen blocked by browser.");
+    }
+  }
+
+  // Clock
+  setInterval(()=>{
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2,"0");
+    const mm = String(d.getMinutes()).padStart(2,"0");
+    clockEl.textContent = `${hh}:${mm}`;
+  }, 500);
+
+  // Idle (does NOT stop autoscroll now)
+  let idleTimer = null;
+  function setIdle(v){
+    body.classList.toggle("idle", v);
+    if(v && state.ui.autoTheater) setTheater(true);
+  }
+  function resetIdle(){
+    setIdle(false);
+    if(idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(()=>setIdle(true), IDLE_MS);
+  }
+  ["mousemove","mousedown","keydown","wheel","touchstart","touchmove"].forEach(evt=>{
+    window.addEventListener(evt, resetIdle, {passive:true});
+  });
+
+  // Autoscroll (pause on real interaction only)
+  let autoScrollTimer = null;
+  let guideInteracting = false;
+  let guideInteractionTimer = null;
+
+  function shouldAutoscroll(){
+    if(!state.ui.autoScroll) return false;
+    if(guideInteracting) return false;
+    if(state.ui.theater) return false;
+    return true;
+  }
+  function startAutoscroll(){
+    stopAutoscroll();
+    autoScrollTimer = setInterval(()=>{
+      if(!shouldAutoscroll()) return;
+      if(list.scrollHeight <= list.clientHeight + 2) return;
+      list.scrollTop += AUTOSCROLL_STEP_PX;
+      if(list.scrollTop >= (list.scrollHeight - list.clientHeight - 2)) list.scrollTop = 0;
+    }, AUTOSCROLL_TICK_MS);
+  }
+  function stopAutoscroll(){
+    if(autoScrollTimer) clearInterval(autoScrollTimer);
+    autoScrollTimer = null;
+  }
+  function pauseAutoscroll(){
+    if(!state.ui.autoScroll) return;
+    guideInteracting = true;
+    if(guideInteractionTimer) clearTimeout(guideInteractionTimer);
+    guideInteractionTimer = setTimeout(()=>{ guideInteracting = false; }, AUTOSCROLL_RESUME_MS);
+  }
+  ["pointerdown","touchstart","mousedown","wheel","click"].forEach(evt=>{
+    guide.addEventListener(evt, pauseAutoscroll, {passive:true});
+  });
+  list.addEventListener("scroll", pauseAutoscroll, {passive:true});
+
+  // Playback
+  let hls = null;
+  let current = null;
+  let selectedIndex = 0;
+  let filtered = [];
+
+  function stopHls(){ if(hls){ try{ hls.destroy(); }catch{} hls=null; } }
+  function showVideo(){ pvVideo.style.display="block"; pvFrame.style.display="none"; }
+  function showFrame(){ pvVideo.style.display="none"; pvFrame.style.display="block"; }
+
+  function play(ch){
+    if(!ch) return;
+    current = ch;
+
+    const mode = (ch.mode||"tab").toLowerCase();
+    nowEl.textContent = `Playing: ${ch.name||"Unnamed"}`;
+    modeBadge.textContent = `mode: ${mode}`;
+    setStatus(`Loading: ${ch.name||"Unnamed"}`);
+
+    stopHls();
+    try{ pvVideo.pause(); }catch{}
+
+    if(mode === "tab"){
+      showFrame();
+      pvFrame.src = "about:blank";
+      try{ window.open(ch.url, "_blank"); }catch{}
+      setStatus(`Opened in tab: ${ch.name}`);
+      return;
+    }
+
+    if(mode === "mp4"){
+      showVideo();
+      pvVideo.src = ch.url;
+      pvVideo.play().then(()=>setStatus(`Playing (MP4): ${ch.name}`))
+        .catch(()=>setStatus("Tap play in the video controls (autoplay blocked)."));
+      return;
+    }
+
+    if(mode === "hls"){
+      showVideo();
+      const url = ch.url;
+      if(pvVideo.canPlayType("application/vnd.apple.mpegurl")){
+        pvVideo.src = url;
+        pvVideo.play().then(()=>setStatus(`Playing (HLS): ${ch.name}`))
+          .catch(()=>setStatus("Tap play in the video controls (autoplay blocked)."));
+        return;
+      }
+      if(window.Hls && window.Hls.isSupported()){
+        hls = new window.Hls({ enableWorker:true, maxBufferLength:30 });
+        hls.loadSource(url);
+        hls.attachMedia(pvVideo);
+        pvVideo.play().then(()=>setStatus(`Playing (HLS): ${ch.name}`))
+          .catch(()=>setStatus("Tap play in the video controls (autoplay blocked)."));
+        return;
+      }
+      setStatus("HLS not       color:var(--text);
       outline:none;
     }
 
