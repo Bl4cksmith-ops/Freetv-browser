@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1, maximum-scale=1"/>
-  <title>Free TV v12.3 (Mobile Guide Fix)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Free TV v10 (Sleep/Wake)</title>
   <style>
     :root{
       --bg:#0b0f17;
@@ -25,49 +25,486 @@
       background:var(--bg);
       color:var(--text);
       overflow:hidden;
-      touch-action: manipulation;
     }
 
-    .app{
-      height:100vh;width:100vw;
-      display:grid;
-      grid-template-columns:minmax(320px,420px) 1fr;
-    }
+    .app{height:100vh;width:100vw;display:grid;grid-template-columns:400px 1fr}
+    .guide{min-height:0;min-width:0}
+    .list{min-height:0;min-width:0;overflow-y:auto;overscroll-behavior:contain}
 
-    /* Theater hides guide */
-    .theater .app{ grid-template-columns: 0 1fr; }
-    .theater .guide{ display:none; }
-
-    /* Guide: make the whole panel scrollable on small screens */
     .guide{
       background:var(--panel);
       border-right:1px solid var(--panelBorder);
       padding:12px;
-
-      display:flex;
-      flex-direction:column;
-      min-height:0;
-
-      overflow-y:auto;
-      overscroll-behavior:contain;
-      -webkit-overflow-scrolling:touch;
-
+      display:grid;
+      grid-template-rows:auto auto auto auto 1fr auto;
+      gap:10px;
       opacity:1;
       transform:translateX(0);
       transition:opacity 1.2s ease, transform 1.2s ease;
       will-change:opacity,transform;
     }
-    .idle .guide{opacity:.08;transform:translateX(-10px)}
+    .idle .guide{opacity:.06;transform:translateX(-10px)}
 
-    .hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
-    .title{font-weight:820;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
-    .pill{
-      font-size:12px;padding:4px 10px;border-radius:999px;
+    .hdr{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .title{font-weight:800;letter-spacing:.2px;display:flex;align-items:center;gap:10px}
+    .pill{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.25);color:rgba(255,255,255,.85);white-space:nowrap}
+    .sub{color:var(--muted);font-size:12px;line-height:1.35}
+
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    input,select,button,textarea,label{font:inherit}
+    input,select{
+      width:100%;
+      padding:10px;
+      border-radius:12px;
       border:1px solid rgba(255,255,255,.12);
-      background:rgba(0,0,0,.25);
-      color:rgba(255,255,255,.85);
-      white-space:nowrap;
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      outline:none;
     }
+    button{
+      padding:10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(124,92,255,.15);
+      color:rgba(255,255,255,.92);
+      cursor:pointer;
+      box-shadow:var(--shadow);
+    }
+    button.secondary{background:rgba(255,255,255,.06);box-shadow:none}
+    button.danger{background:rgba(251,113,133,.15)}
+    button:active{transform:translateY(1px)}
+
+    .toggleRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .toggle{
+      display:flex;align-items:center;gap:10px;
+      padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);color:rgba(255,255,255,.88);user-select:none;
+    }
+    .toggle input{width:auto}
+
+    .list{
+      border-radius:var(--radius);
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.03);
+    }
+    .item{
+      padding:12px;border-bottom:1px solid rgba(255,255,255,.08);
+      display:grid;gap:6px;cursor:pointer;
+    }
+    .item:last-child{border-bottom:none}
+    .item.selected{outline:2px solid rgba(124,92,255,.55);background:rgba(124,92,255,.10)}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .name{font-weight:750}
+    .meta{color:var(--muted);font-size:12px}
+    .tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .tag{
+      font-size:11px;padding:4px 8px;border-radius:999px;
+      border:1px solid rgba(124,92,255,.28);background:rgba(124,92,255,.14);
+      color:rgba(230,225,255,.92);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+    }
+    .tag.good{border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.13)}
+    .tag.warn{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.12)}
+    .tag.star{border-color:rgba(255,215,0,.35);background:rgba(255,215,0,.12);color:rgba(255,245,200,.95)}
+    .tag.moon{border-color:rgba(200,200,255,.35);background:rgba(200,200,255,.12);color:rgba(240,240,255,.95)}
+
+    .footer{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px}
+
+    .player{position:relative;overflow:hidden;background:#000}
+    .frameWrap{position:absolute;inset:0;transition:transform 1.2s ease, filter 1.2s ease;will-change:transform,filter}
+    .idle .frameWrap{transform:scale(1.02)}
+    iframe,video{width:100%;height:100%;border:0;background:#000}
+
+    .overlayTop{
+      position:absolute;top:12px;left:12px;right:12px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      pointer-events:none;
+    }
+    .chip{
+      background:rgba(0,0,0,.45);
+      border:1px solid rgba(255,255,255,.12);
+      padding:8px 10px;border-radius:999px;
+      color:rgba(255,255,255,.90);
+      font-size:12px;
+      max-width:60%;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+    .overlayBottom{
+      position:absolute;left:12px;right:12px;bottom:12px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      pointer-events:none;
+    }
+    .hint{
+      color:rgba(255,255,255,.70);
+      font-size:12px;
+      background:rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.10);
+      padding:8px 10px;border-radius:999px;
+      max-width:55%;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }
+
+    /* Sleep overlay */
+    .sleepShade{
+      position:absolute; inset:0;
+      background: rgba(0,0,0,0);
+      transition: background 1.2s ease;
+      pointer-events:none;
+    }
+    .sleeping .sleepShade{
+      background: rgba(0,0,0,0.72);
+    }
+    .sleeping .frameWrap{
+      filter: brightness(0.55) saturate(0.85);
+    }
+
+    /* Modal */
+    .modal{
+      position:fixed;inset:0;background:rgba(0,0,0,.55);
+      display:none;align-items:center;justify-content:center;padding:20px;z-index:50;
+    }
+    .modal.on{display:flex}
+    .card{
+      width:min(1100px,96vw);
+      max-height:90vh;
+      overflow:auto;
+      border-radius:20px;
+      background:rgba(18,24,38,.96);
+      border:1px solid rgba(255,255,255,.12);
+      box-shadow:var(--shadow);
+      padding:16px;
+      display:grid;
+      gap:12px;
+    }
+    .card h2{margin:0;font-size:16px}
+    textarea{
+      width:100%;
+      min-height:140px;
+      padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);color:var(--text);outline:none;resize:vertical
+    }
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .small{font-size:12px;color:var(--muted);line-height:1.35}
+    .actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+    .progressBar{height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.10)}
+    .progressBar>div{height:100%;width:0%;background:linear-gradient(90deg, rgba(124,92,255,.9), rgba(45,212,191,.85));transition:width .2s ease}
+
+    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    .kbd{
+      font-size:11px;padding:2px 6px;border:1px solid rgba(255,255,255,.18);
+      border-radius:6px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.85)
+    }
+  </style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <aside class="guide" id="guide">
+    <div class="hdr">
+      <div class="title">Free TV <span class="pill">v10 sleep</span></div>
+      <div class="pill" id="clock">--:--</div>
+    </div>
+
+    <div class="sub">
+      <span class="kbd">↑</span>/<span class="kbd">↓</span> select • <span class="kbd">Enter</span> play •
+      <span class="kbd">F</span> favorite • <span class="kbd">S</span> sleep-tag •
+      <span class="kbd">G</span> show guide
+      <br/>After 30s idle: guide fades + player expands.
+    </div>
+
+    <div class="controls">
+      <input id="q" placeholder="Search (name/tags/url)" />
+      <select id="group"><option value="">Group (all)</option></select>
+      <select id="lang"><option value="">Language (all)</option></select>
+      <select id="type">
+        <option value="">Type (all)</option>
+        <option value="news">News</option>
+        <option value="sports">Sports</option>
+        <option value="movies">Movies</option>
+        <option value="music">Music</option>
+        <option value="education">Education</option>
+        <option value="general">General</option>
+      </select>
+    </div>
+
+    <div class="toggleRow">
+      <label class="toggle"><input type="checkbox" id="playableOnly"/> Playable only (HLS/MP4)</label>
+      <label class="toggle"><input type="checkbox" id="hideAudioOnly"/> Hide audio-only</label>
+      <label class="toggle"><input type="checkbox" id="onlyFavs"/> Favorites</label>
+      <label class="toggle"><input type="checkbox" id="onlySleep"/> Sleep channels</label>
+    </div>
+
+    <div class="controls">
+      <button class="secondary" id="btnOpenTab">Open Tab</button>
+      <button class="secondary" id="btnPanel">Sleep/Wake</button>
+    </div>
+
+    <div class="list" id="list" tabindex="0"></div>
+
+    <div class="footer">
+      <div id="status">Ready</div>
+      <div id="count">0</div>
+    </div>
+  </aside>
+
+  <main class="player" id="player">
+    <div class="frameWrap">
+      <iframe
+        id="pvFrame"
+        sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-presentation"
+        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+        referrerpolicy="strict-origin-when-cross-origin"
+      ></iframe>
+      <video id="pvVideo" controls playsinline style="display:none"></video>
+    </div>
+
+    <div class="sleepShade" id="sleepShade"></div>
+
+    <div class="overlayTop">
+      <div class="chip" id="nowPlaying">No channel</div>
+      <div class="chip" id="modeBadge">mode: —</div>
+    </div>
+
+    <div class="overlayBottom">
+      <div class="hint" id="idleHint">active</div>
+      <div class="hint" id="sleepHint">Sleep: off • Wake: off</div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: Sleep/Wake + Playlist import -->
+<div class="modal" id="modal">
+  <div class="card">
+    <div class="hdr">
+      <h2>Sleep / Wake / Playlists</h2>
+      <button class="secondary" id="btnClose">Close</button>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <div class="small"><b>Sleep Mode</b></div>
+        <div class="row3">
+          <input id="sleepMins" type="number" min="1" max="600" placeholder="Minutes (e.g. 30)"/>
+          <select id="sleepBehavior">
+            <option value="pause">Pause at end</option>
+            <option value="mute">Mute at end</option>
+            <option value="stop">Stop + blank</option>
+          </select>
+          <select id="sleepChannelPick">
+            <option value="none">No auto channel</option>
+            <option value="selected">Use selected channel</option>
+            <option value="randomSleep">Random sleep channel</option>
+            <option value="randomFav">Random favorite</option>
+          </select>
+        </div>
+
+        <div class="controls" style="grid-template-columns:1fr 1fr">
+          <button id="btnStartSleep">Start Sleep</button>
+          <button class="secondary" id="btnCancelSleep">Cancel Sleep</button>
+        </div>
+
+        <div class="small" id="sleepStatus" style="margin-top:8px"></div>
+
+        <div style="height:12px"></div>
+
+        <div class="small"><b>Wake / Alarm</b></div>
+        <div class="row3">
+          <input id="wakeTime" type="time"/>
+          <select id="wakeRamp">
+            <option value="0">No ramp</option>
+            <option value="60">Ramp 1 min</option>
+            <option value="120">Ramp 2 min</option>
+            <option value="300">Ramp 5 min</option>
+          </select>
+          <select id="wakeChannelPick">
+            <option value="selected">Use selected channel</option>
+            <option value="randomFav">Random favorite</option>
+            <option value="randomSleep">Random sleep channel</option>
+          </select>
+        </div>
+
+        <div class="controls" style="grid-template-columns:1fr 1fr">
+          <button id="btnSetWake">Set Wake</button>
+          <button class="secondary" id="btnClearWake">Clear Wake</button>
+        </div>
+        <div class="small" id="wakeStatus" style="margin-top:8px"></div>
+
+        <div style="height:12px"></div>
+        <div class="small">
+          Tip: mark channels as “sleep channels” with <span class="kbd">S</span> while selected.
+        </div>
+      </div>
+
+      <div>
+        <div class="small"><b>M3U Playlist Import</b> (ships with English list)</div>
+        <div class="small mono" style="margin-top:6px">https://iptv-org.github.io/iptv/languages/eng.m3u</div>
+
+        <div style="height:10px"></div>
+        <input id="m3uUrl" class="mono" placeholder="Paste playlist URL to import"/>
+        <div style="height:8px"></div>
+        <div class="controls" style="grid-template-columns:1fr 1fr">
+          <button id="btnImportUrl">Import URL</button>
+          <button class="secondary" id="btnImportFile">Import File</button>
+        </div>
+
+        <div style="height:10px"></div>
+        <div class="small">Progress</div>
+        <div class="progressBar"><div id="progressFill"></div></div>
+        <div class="small" id="importMsg" style="margin-top:8px"></div>
+
+        <div style="height:10px"></div>
+        <div class="small">Saved playlists (one per line)</div>
+        <textarea id="sourcesBox" class="mono"></textarea>
+        <div class="actions">
+          <button class="secondary" id="btnExport">Export Data</button>
+          <button class="secondary" id="btnClearChannels">Clear Channels</button>
+          <button class="danger" id="btnResetAll">Reset Everything</button>
+          <button id="btnSaveSources">Save Playlists</button>
+        </div>
+        <div class="small" id="sourcesMsg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+<script>
+(() => {
+  // ------------------- Config -------------------
+  const DEFAULT_ENG_PLAYLIST = "https://iptv-org.github.io/iptv/languages/eng.m3u";
+  const KEY = "free_tv_v10_sleep_state";
+  const IDLE_MS = 30_000;
+
+  // ------------------- Default state -------------------
+  const DEFAULT_STATE = {
+    channels: [
+      { id:"pluto", name:"Pluto TV (tab)", mode:"tab", url:"https://pluto.tv/live-tv", language:"English", group:"FAST", type:"general", tags:["fast","tab"] },
+      { id:"tubi",  name:"Tubi Live (tab)", mode:"tab", url:"https://tubitv.com/live", language:"English", group:"FAST", type:"general", tags:["fast","tab"] },
+      { id:"roku",  name:"The Roku Channel (tab)", mode:"tab", url:"https://therokuchannel.roku.com", language:"English", group:"FAST", type:"general", tags:["fast","tab"] },
+      { id:"pbs",   name:"PBS Livestream (tab)", mode:"tab", url:"https://www.pbs.org/livestream", language:"English", group:"Local", type:"news", tags:["tab"] },
+      { id:"mp4-bunny", name:"Big Buck Bunny (MP4 sample)", mode:"mp4",
+        url:"https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        language:"English", group:"Demo", type:"general", tags:["demo","mp4"]
+      }
+    ],
+    sources: [ DEFAULT_ENG_PLAYLIST ],
+    favorites: {},     // url -> true
+    sleepTags: {},     // url -> true
+    recents: [],       // urls
+    audioOnly: {},     // url -> true
+    ui: {
+      playableOnly: true,
+      hideAudioOnly: true,
+      onlyFavs: false,
+      onlySleep: false
+    },
+    sleep: {
+      active: false,
+      endAt: null,
+      behavior: "pause",
+      channelStrategy: "none"
+    },
+    wake: {
+      active: false,
+      timeHHMM: null,
+      channelStrategy: "selected",
+      rampSeconds: 0,
+      nextFireAt: null
+    }
+  };
+
+  let state = loadState();
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return structuredClone(DEFAULT_STATE);
+      const s = JSON.parse(raw);
+      if(!Array.isArray(s.channels)) s.channels = [];
+      if(!Array.isArray(s.sources)) s.sources = [DEFAULT_ENG_PLAYLIST];
+      if(!s.favorites) s.favorites = {};
+      if(!s.sleepTags) s.sleepTags = {};
+      if(!Array.isArray(s.recents)) s.recents = [];
+      if(!s.audioOnly) s.audioOnly = {};
+      if(!s.ui) s.ui = structuredClone(DEFAULT_STATE.ui);
+      if(!s.sleep) s.sleep = structuredClone(DEFAULT_STATE.sleep);
+      if(!s.wake) s.wake = structuredClone(DEFAULT_STATE.wake);
+      if(!s.sources.includes(DEFAULT_ENG_PLAYLIST)) s.sources.unshift(DEFAULT_ENG_PLAYLIST);
+      return s;
+    }catch{
+      return structuredClone(DEFAULT_STATE);
+    }
+  }
+  function saveState(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+
+  // ------------------- Elements -------------------
+  const app = document.getElementById("app");
+  const player = document.getElementById("player");
+  const list = document.getElementById("list");
+  const statusEl = document.getElementById("status");
+  const countEl = document.getElementById("count");
+  const nowEl = document.getElementById("nowPlaying");
+  const modeBadge = document.getElementById("modeBadge");
+  const idleHint = document.getElementById("idleHint");
+  const sleepHint = document.getElementById("sleepHint");
+  const clockEl = document.getElementById("clock");
+
+  const qEl = document.getElementById("q");
+  const groupEl = document.getElementById("group");
+  const langEl = document.getElementById("lang");
+  const typeEl = document.getElementById("type");
+
+  const playableOnlyEl = document.getElementById("playableOnly");
+  const hideAudioOnlyEl = document.getElementById("hideAudioOnly");
+  const onlyFavsEl = document.getElementById("onlyFavs");
+  const onlySleepEl = document.getElementById("onlySleep");
+
+  const btnOpenTab = document.getElementById("btnOpenTab");
+  const btnPanel = document.getElementById("btnPanel");
+
+  const pvFrame = document.getElementById("pvFrame");
+  const pvVideo = document.getElementById("pvVideo");
+
+  // Modal
+  const modal = document.getElementById("modal");
+  const btnClose = document.getElementById("btnClose");
+  const sourcesBox = document.getElementById("sourcesBox");
+  const btnSaveSources = document.getElementById("btnSaveSources");
+  const btnExport = document.getElementById("btnExport");
+  const btnClearChannels = document.getElementById("btnClearChannels");
+  const btnResetAll = document.getElementById("btnResetAll");
+
+  const m3uUrlEl = document.getElementById("m3uUrl");
+  const btnImportUrl = document.getElementById("btnImportUrl");
+  const btnImportFile = document.getElementById("btnImportFile");
+  const importMsg = document.getElementById("importMsg");
+  const progressFill = document.getElementById("progressFill");
+  const sourcesMsg = document.getElementById("sourcesMsg");
+
+  // Sleep/Wake controls
+  const sleepMinsEl = document.getElementById("sleepMins");
+  const sleepBehaviorEl = document.getElementById("sleepBehavior");
+  const sleepChannelPickEl = document.getElementById("sleepChannelPick");
+  const btnStartSleep = document.getElementById("btnStartSleep");
+  const btnCancelSleep = document.getElementById("btnCancelSleep");
+  const sleepStatusEl = document.getElementById("sleepStatus");
+
+  const wakeTimeEl = document.getElementById("wakeTime");
+  const wakeRampEl = document.getElementById("wakeRamp");
+  const wakeChannelPickEl = document.getElementById("wakeChannelPick");
+  const btnSetWake = document.getElementById("btnSetWake");
+  const btnClearWake = document.getElementById("btnClearWake");
+  const wakeStatusEl = document.getElementById("wakeStatus");
+
+  // ------------------- Helpers -------------------
+  function setStatus(msg){ statusEl.textContent = msg; }
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  }
+  function uniq(arr){
+    return [...new Set(arr)].filter(Boolean).sort((a,b)=>a.localeCompare(b));
+  }
+  function     }
     .sub{color:var(--muted);font-size:12px;line-height:1.35;margin-bottom:10px}
 
     .controls{
